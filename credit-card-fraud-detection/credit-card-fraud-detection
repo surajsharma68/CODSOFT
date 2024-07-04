@@ -1,0 +1,115 @@
+import pandas as pd
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
+import warnings
+warnings.filterwarnings("ignore")
+
+pd.set_option('display.max_columns', None)
+
+# Load the dataset
+data_path = r"C:\Users\Dell\Documents\suraj\codsoft-intern\credit-card-fraud-detection\fraudTest.csv"
+credit_card_data = pd.read_csv(data_path)
+
+# Display initial information about the dataset
+print(credit_card_data.head())
+print(credit_card_data.info())
+print(credit_card_data.describe())
+print(f"Dataset shape: {credit_card_data.shape}")
+
+# Calculate the percentage of missing values in each column
+missing_values_col = round(100 * (credit_card_data.isnull().sum() / len(credit_card_data)), 2).sort_values(ascending=False)
+print(missing_values_col)
+
+# Calculate the percentage of missing values in each row
+missing_values_row = round(100 * (credit_card_data.isnull().sum(axis=1) / len(credit_card_data)), 2).sort_values(ascending=False)
+print(missing_values_row)
+
+# Create a copy of the dataset and remove duplicates
+cleaned_data = credit_card_data.copy().drop_duplicates()
+
+print(f"Original shape: {credit_card_data.shape}")
+print(f"Shape after removing duplicates: {cleaned_data.shape}")
+
+# Assign the cleaned dataset back to the original variable and delete the copy
+credit_card_data = cleaned_data
+del cleaned_data
+
+# Verify the information post-cleaning
+print(credit_card_data.info())
+
+# Function to plot histograms for features
+def plot_histograms(df, features, rows, cols):
+    fig, axes = plt.subplots(rows, cols, figsize=(20, 20))
+    axes = axes.flatten()
+    
+    for i, feature in enumerate(features):
+        sns.histplot(df[feature], bins=20, ax=axes[i], color='midnightblue')
+        axes[i].set_title(f"{feature} Distribution", color='DarkRed')
+        axes[i].set_yscale('log')
+    
+    plt.tight_layout()
+    plt.show()
+
+plot_histograms(credit_card_data, credit_card_data.columns, 8, 4)
+
+# Count and plot the 'Class' distribution
+class_counts = credit_card_data['Class'].value_counts()
+print(class_counts)
+
+sns.countplot(x='Class', data=credit_card_data).set_yscale('log')
+plt.show()
+
+# Plot the heatmap of feature correlations
+plt.figure(figsize=(40, 10))
+sns.heatmap(credit_card_data.corr(), annot=True, cmap="tab20c")
+plt.show()
+
+# Dropping 'Time' column as it's not required for the business logic
+selected_features = [f'V{i}' for i in range(1, 29)] + ['Amount']
+X = credit_card_data[selected_features]
+y = credit_card_data['Class']
+
+# Importing statsmodels and performing logistic regression
+import statsmodels.api as sm
+
+X = sm.add_constant(X)
+logit_model = sm.Logit(y, X).fit()
+print(logit_model.summary())
+
+# Function to perform backward feature elimination
+def backward_feature_elimination(df, dep_var, features):
+    while len(features) > 0:
+        model = sm.Logit(dep_var, df[features])
+        result = model.fit(disp=0)
+        highest_pvalue = round(result.pvalues, 3).nlargest(1)
+        
+        if highest_pvalue[0] < 0.0001:
+            return result
+        else:
+            features = features.drop(highest_pvalue.index)
+
+final_model = backward_feature_elimination(X, credit_card_data['Class'], X.columns)
+
+print(final_model.summary())
+
+# Display the Odds Ratios and Confidence Intervals
+params = np.exp(final_model.params)
+conf = np.exp(final_model.conf_int())
+conf['Odds Ratio'] = params
+conf['pvalue'] = round(final_model.pvalues, 3)
+conf.columns = ['CI 95%(2.5%)', 'CI 95%(97.5%)', 'Odds Ratio', 'pvalue']
+print(conf)
+
+# Select new features based on the final model
+new_selected_features = credit_card_data[['V1', 'V2', 'V3', 'V4', 'V5', 'V6', 'V7', 'V8', 'V9', 'V10',
+                                          'V11', 'V12', 'V13', 'V14', 'V15', 'V16', 'V17', 'V20', 'V21', 
+                                          'V22', 'V23', 'V25', 'V26', 'V27', 'Class']]
+
+# Splitting the data into training and testing sets
+X_new = new_selected_features.iloc[:, :-1]
+y_new = new_selected_features.iloc[:, -1]
+from sklearn.model_selection import train_test_split
+
+X_train, X_test, y_train, y_test = train_test_split(X_new, y_new, test_size=0.2, stratify=y_new, random_state=42)
+print(X_train.shape, X_test.shape, y_train.shape, y_test.shape)
